@@ -7,111 +7,124 @@ card_deck = "AABBCCDDDEEEFFFFGGGGG"
 
 # All possible hand combinations with 7 cards:
 a = all_hands(deck=card_deck, n=7)
+current_hand = random.choice(list(a))
+deckRemainder = card_deck
+for card in current_hand:
+    deckRemainder = deckRemainder.replace(card, '', 1)
 
-# Let's choose 1 random hand:
-hand = random.choice(list(a))
+action_mapping = {1: 'secret',
+                  2: 'burn',
+                  3: 'gift',
+                  4: 'comp'}
 
-deck_remaining = card_deck
-for card in hand:
-    deck_remaining = deck_remaining.replace(card, '', 1)
-
-print(f'\nAgent Hand: {hand} and deck remaining: {deck_remaining}')
-
-
-# Agent is player so it will act first:
 option_mapping = {'secret': get_secret_options,
                   'burn': get_burn_options,
                   'gift': get_gift_options,
                   'comp': get_comp_options}
 
-N_agent_1 = 0
 
-position = {'hand_1': ''.join(hand),
-            'action_1': [],
-            'cards_played_1': [],
-            'enemy_response': [],
-            'enemy_hand_1': [],
-            'enemy_action_1:': [],
-            'enemy_cards_played_1': [],
-            'hand_2': [],
-            'action_2': [],
-            'cards_played_2': []}
+def recursive_mapping(depth, hand, deck_remaining, enemy_hand=None, actions_left=None, enemy_actions_left=None):
+    print(depth)
 
-counter = 1
+    if depth > 4:
+        return {}
 
-# Loop through all four available actions:
-for action_key in option_mapping.keys():
-    options = option_mapping[action_key](cards_in_hand=hand)
+    if depth == 1:
+        actions_left = ['secret', 'burn', 'gift', 'comp']
+        enemy_actions_left = ['secret', 'burn', 'gift', 'comp']
 
-    # Loop through each card choices:
-    for opt in options:
+    turn_data = {'turn_counter': depth,
+                 'hand': [],
+                 'action': [],
+                 'cards_played': [],
+                 'enemy_response': [],
+                 'enemy_hand': [],
+                 'enemy_action': [],
+                 'enemy_cards_played': [],
+                 'agent_response': [],
+                 'next_turn': []}
 
-        enemy_response = 'N.A.'
-        if action_key == 'gift':
-            enemy_responses = set(itertools.combinations(opt, 1))
+    counter = 1
+
+    # Loop through all four available actions:
+    for action in actions_left:
+        options = option_mapping[action](cards_in_hand=hand)
+
+        # Loop through each card choices:
+        for cards_played in options:
+
+            if action == 'comp':
+                offer = [''.join(i) for i in cards_played]
+            elif action == 'gift':
+                offer = cards_played
+            else:
+                offer = 'N'
+
+            # Loop through each enemy response if applicable:
+            enemy_responses = set(itertools.combinations(offer, 1))
             for enemy_response in enemy_responses:
                 enemy_response = tuple(enemy_response[0])
 
-                position['action_1'].append(action_key)
-                position['cards_played_1'].append(opt)
-                position['enemy_response'].append(enemy_response)
+                # Loop through all the hands the enemy can have:
+                if depth == 1:
+                    opponent_hands = all_hands(deck=deck_remaining, n=7)
+                else:
+                    card_draw = set(itertools.combinations(deck_remaining, 1))
+                    opponent_hands = set([join_tuples(enemy_hand, c) for c in card_draw])
 
-                counter += 1
+                for enemy_hand in opponent_hands:
 
-        elif action_key == 'comp':
-            enemy_responses = set(itertools.combinations([''.join(i) for i in opt], 1))
-            for enemy_response in enemy_responses:
-                enemy_response = tuple(enemy_response[0])
+                    # Loop through all the options the enemy has:
+                    for enemy_action in enemy_actions_left:
 
-                position['action_1'].append(action_key)
-                position['cards_played_1'].append(opt)
-                position['enemy_response'].append(enemy_response)
+                        enemy_options = option_mapping[enemy_action](cards_in_hand=enemy_hand)
+                        for enemy_cards_played in enemy_options:
 
-                counter += 1
+                            if enemy_action == 'comp':
+                                offer = [''.join(i) for i in enemy_cards_played]
+                            elif enemy_action == 'gift':
+                                offer = cards_played
+                            else:
+                                offer = 'N'
 
-        else:
-            position['action_1'].append(action_key)
-            position['cards_played_1'].append(opt)
-            position['enemy_response'].append(enemy_response)
+                            # Loop through each agent response if applicable:
+                            agent_responses = set(itertools.combinations(offer, 1))
+                            for agent_response in agent_responses:
+                                agent_response = tuple(agent_response[0])
 
-            counter += 1
+                                # Loop through all unique card draws in the next turn:
+                                hand_after_this = neg_intersect(hand, flatten(cards_played))
+                                for card_draw in set(itertools.combinations(deck_remaining, 1)):
+                                    hand_next = join_tuples(hand_after_this, card_draw)
 
-        # hand_after_this = neg_intersect(hand, flatten(opt))
-        # # Loop through all unique card draws in the next turn:
-        # for card in set(itertools.combinations(deck_remaining, 1)):
-        #
-        #     position['action_1'].append(action_key)
-        #     position['cards_played_1'].append(opt)
-        #     position['hand_2'].append(''.join(join_tuples(hand_after_this, card)))
+                                    turn_data['hand'].append(hand)
+                                    turn_data['action'].append(action)
+                                    turn_data['cards_played'].append(cards_played)
+                                    turn_data['enemy_response'].append(enemy_response)
+
+                                    turn_data['enemy_hand'].append(enemy_hand)
+                                    turn_data['enemy_action'].append(enemy_action)
+                                    turn_data['enemy_cards_played'].append(enemy_cards_played)
+
+                                    turn_data['agent_response'].append(agent_response)
+
+                                    actions_left.remove(action)
+                                    enemy_actions_left.remove(enemy_action)
+
+                                    deck_remaining_this_version = deck_remaining.replace(card_draw[0], '', 1)
+                                    for c in enemy_hand:
+                                        deck_remaining_this_version = deck_remaining_this_version.replace(c, '', 1)
+
+                                    turn_data['next_turn'] = recursive_mapping(depth=depth+1,
+                                                                               hand=hand_next,
+                                                                               actions_left=actions_left,
+                                                                               enemy_hand=enemy_hand,
+                                                                               enemy_actions_left=enemy_actions_left,
+                                                                               deck_remaining=deck_remaining_this_version)
+
+                                    counter += 1
+
+    return turn_data
 
 
-
-# Opponent First turn:
-opponent_hands = all_hands(deck=deck_remaining, n=7)
-
-print(f'Possible enemy hands: {len(opponent_hands)} \n')
-
-# For each opponent hand, the opponent can choose 4 actions
-N_enemy_1 = 0
-
-for idx, hand in enumerate(opponent_hands):
-
-    secret_options = set(itertools.combinations(hand, 1))
-    # print(f'Secret: {secret_options}')
-
-    burn_options = set(itertools.combinations(hand, 2))
-    # print(f'Burn: {burn_options}')
-
-    gift_options = set(itertools.combinations(hand, 3))
-    # print(f'Gift: {gift_options}')
-
-    comp_options = get_comp_options(hand)
-    # print(f'Comp: {comp_options} \n')
-
-    N_enemy_options = len(secret_options) + len(burn_options) + len(gift_options) + sum([len(i) for i in comp_options])
-
-    # print(f'{idx+1}: Enemy hand: {hand} >>>> options with this hand in turn {1}: {N_enemy_options}')
-
-    N_enemy_1 += N_enemy_options
-
-print(f'\n \n Total Enemy options in turn {1}: {N_enemy_1} __________________________')
+data = recursive_mapping(depth=1, hand=current_hand, deck_remaining=deckRemainder)
